@@ -1,3 +1,5 @@
+<p align="center"><img src="resources/logo.png" alt="Soundstave" width="300"></p>
+
 # Soundstave
 
 **Soundstave** is an open-source (GPL-3.0) desktop application for spectral analysis of

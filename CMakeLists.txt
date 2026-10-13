@@ -8,7 +8,7 @@ if(APPLE)
     endif()
 endif()
 
-project(Soundstave VERSION 0.2.1 LANGUAGES C CXX)
+project(Soundstave VERSION 0.2.2 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -107,8 +107,8 @@ juce_add_gui_app(Soundstave
     PRODUCT_NAME        "Soundstave"
     COMPANY_NAME        "Soundstave Contributors"
     BUNDLE_ID           "org.soundstave.app"
-    ICON_BIG            "${CMAKE_CURRENT_SOURCE_DIR}/resources/icon_512.png"
-    ICON_SMALL          "${CMAKE_CURRENT_SOURCE_DIR}/resources/icon_512.png"
+    ICON_BIG            "${CMAKE_CURRENT_SOURCE_DIR}/resources/icon_1024.png"
+    ICON_SMALL          "${CMAKE_CURRENT_SOURCE_DIR}/resources/icon_1024.png"
     NEEDS_CURL          FALSE
     NEEDS_WEB_BROWSER   FALSE
 )
