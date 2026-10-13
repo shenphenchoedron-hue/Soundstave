@@ -1,0 +1,126 @@
+# Builds and tests Soundstave on Linux, Windows and macOS.
+# Pushing a tag "v*" additionally publishes a GitHub release with the binaries.
+name: Build and release
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux
+            os: ubuntu-22.04
+            asset: linux-x86_64
+          - name: Windows
+            os: windows-latest
+            asset: windows-x64
+          - name: macOS
+            os: macos-latest
+            asset: macos-universal
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libfreetype6-dev libfontconfig1-dev \
+            libx11-dev libxcomposite-dev libxcursor-dev libxext-dev libxinerama-dev \
+            libxrandr-dev libxrender-dev libgtk-3-dev
+
+      - name: Version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then v="${GITHUB_REF_NAME#v}"; else v="dev-${GITHUB_SHA::7}"; fi
+          echo "VERSION=$v" >> "$GITHUB_ENV"
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release --parallel 4
+
+      - name: Test
+        shell: bash
+        run: |
+          exe=build/SoundstaveTests_artefacts/Release/SoundstaveTests
+          [ -f "$exe.exe" ] && exe="$exe.exe"
+          "$exe"
+
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          d="Soundstave-$VERSION-${{ matrix.asset }}"
+          mkdir "$d"
+          cp build/Soundstave_artefacts/Release/Soundstave README.md LICENSE "$d/"
+          tar czf "$d.tar.gz" "$d"
+          echo "ASSET=$d.tar.gz" >> "$GITHUB_ENV"
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $d = "Soundstave-$env:VERSION-${{ matrix.asset }}"
+          New-Item -ItemType Directory $d | Out-Null
+          Copy-Item build/Soundstave_artefacts/Release/Soundstave.exe, README.md, LICENSE $d
+          Compress-Archive -Path $d -DestinationPath "$d.zip"
+          "ASSET=$d.zip" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          d="Soundstave-$VERSION-${{ matrix.asset }}"
+          mkdir "$d"
+          cp -R build/Soundstave_artefacts/Release/Soundstave.app "$d/"
+          cp README.md LICENSE "$d/"
+          ditto -c -k --keepParent "$d" "$d.zip"
+          echo "ASSET=$d.zip" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: ${{ env.ASSET }}
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Release notes
+        shell: bash
+        run: |
+          notes=".github/release-notes/${GITHUB_REF_NAME}.md"
+          [ -f "$notes" ] || notes=/dev/null
+          cp "$notes" release-notes.md
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: Soundstave ${{ github.ref_name }}
+          body_path: release-notes.md
+          files: dist/*
