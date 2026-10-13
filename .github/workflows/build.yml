@@ -46,11 +46,22 @@ jobs:
       - name: Version
         shell: bash
         run: |
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then v="${GITHUB_REF_NAME#v}"; else v="dev-${GITHUB_SHA::7}"; fi
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            v="${GITHUB_REF_NAME#v}"; num="$v"
+          else
+            v="dev-${GITHUB_SHA::7}"; num="0.0.0"
+          fi
           echo "VERSION=$v" >> "$GITHUB_ENV"
+          # Purely numeric version for package metadata (deb, Inno Setup)
+          echo "VERSION_NUM=$num" >> "$GITHUB_ENV"
 
       - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+        shell: bash
+        run: |
+          extra=()
+          # Static MSVC runtime: the installed app must not depend on the VC++ redistributable
+          [ "$RUNNER_OS" == "Windows" ] && extra+=(-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded)
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release "${extra[@]}"
 
       - name: Build
         run: cmake --build build --config Release --parallel 4
@@ -62,39 +73,86 @@ jobs:
           [ -f "$exe.exe" ] && exe="$exe.exe"
           "$exe"
 
+      # Every platform gets an installer plus a portable archive, all collected in dist/
       - name: Package (Linux)
         if: runner.os == 'Linux'
         run: |
+          mkdir -p dist
           d="Soundstave-$VERSION-${{ matrix.asset }}"
           mkdir "$d"
           cp build/Soundstave_artefacts/Release/Soundstave README.md LICENSE "$d/"
-          tar czf "$d.tar.gz" "$d"
-          echo "ASSET=$d.tar.gz" >> "$GITHUB_ENV"
+          tar czf "dist/$d.tar.gz" "$d"
+
+          # Debian/Ubuntu package
+          p=pkgroot
+          install -Dm755 build/Soundstave_artefacts/Release/Soundstave "$p/opt/soundstave/Soundstave"
+          mkdir -p "$p/usr/bin"
+          ln -s /opt/soundstave/Soundstave "$p/usr/bin/soundstave"
+          install -Dm644 packaging/linux/soundstave.desktop "$p/usr/share/applications/soundstave.desktop"
+          install -Dm644 resources/icon_512.png "$p/usr/share/icons/hicolor/512x512/apps/soundstave.png"
+          install -Dm644 resources/logo.svg "$p/usr/share/icons/hicolor/scalable/apps/soundstave.svg"
+          install -Dm644 LICENSE "$p/usr/share/doc/soundstave/copyright"
+          install -Dm644 README.md "$p/usr/share/doc/soundstave/README.md"
+          mkdir -p "$p/DEBIAN"
+          cat > "$p/DEBIAN/control" <<EOF
+          Package: soundstave
+          Version: $VERSION_NUM
+          Section: sound
+          Priority: optional
+          Architecture: amd64
+          Depends: libasound2, libfreetype6, libfontconfig1, libx11-6, libxext6, libxrandr2, libxinerama1, libxcursor1
+          Maintainer: Soundstave Contributors <https://github.com/shenphenchoedron-hue/Soundstave>
+          Homepage: https://github.com/shenphenchoedron-hue/Soundstave
+          Installed-Size: $(du -sk "$p" | cut -f1)
+          Description: Audio to notation
+           Spectral analysis of recordings, automatic note detection, note editing
+           on top of the spectrogram, and export to MIDI and MusicXML.
+          EOF
+          dpkg-deb --root-owner-group --build "$p" "dist/soundstave_${VERSION_NUM}_amd64.deb"
+          dpkg-deb --info "dist/soundstave_${VERSION_NUM}_amd64.deb"
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
+          New-Item -ItemType Directory dist | Out-Null
           $d = "Soundstave-$env:VERSION-${{ matrix.asset }}"
           New-Item -ItemType Directory $d | Out-Null
           Copy-Item build/Soundstave_artefacts/Release/Soundstave.exe, README.md, LICENSE $d
-          Compress-Archive -Path $d -DestinationPath "$d.zip"
-          "ASSET=$d.zip" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Compress-Archive -Path $d -DestinationPath "dist/$d.zip"
+
+          # Inno Setup installer
+          choco install innosetup -y --no-progress
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          & $iscc "/DAppVersion=$env:VERSION_NUM" "/DSourceDir=$PWD" "/DOutputDir=$PWD\dist" `
+                  "/DOutputName=Soundstave-$env:VERSION-${{ matrix.asset }}-setup" packaging/windows/Soundstave.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Package (macOS)
         if: runner.os == 'macOS'
         run: |
+          mkdir -p dist
+          app=build/Soundstave_artefacts/Release/Soundstave.app
+          # Ad-hoc signature so the (unnotarised) universal app runs on Apple Silicon
+          codesign --force --deep --sign - "$app"
           d="Soundstave-$VERSION-${{ matrix.asset }}"
           mkdir "$d"
-          cp -R build/Soundstave_artefacts/Release/Soundstave.app "$d/"
+          cp -R "$app" "$d/"
           cp README.md LICENSE "$d/"
-          ditto -c -k --keepParent "$d" "$d.zip"
-          echo "ASSET=$d.zip" >> "$GITHUB_ENV"
+          ditto -c -k --keepParent "$d" "dist/$d.zip"
+
+          # Drag-to-Applications disk image
+          s=dmgroot
+          mkdir "$s"
+          cp -R "$app" "$s/"
+          ln -s /Applications "$s/Applications"
+          cp LICENSE "$s/"
+          hdiutil create -volname "Soundstave $VERSION" -srcfolder "$s" -ov -format UDZO "dist/$d.dmg"
 
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.asset }}
-          path: ${{ env.ASSET }}
+          path: dist/*
           if-no-files-found: error
 
   release:

@@ -62,7 +62,9 @@ private:
     std::vector<bool>  columnOutside;
     double colStart = -1.0, colEnd = -1.0;
     int    colWidth = 0;
-    std::array<juce::PixelRGB, 256> palette {};
+    // ARGB, not RGB: on macOS JUCE silently stores Image::RGB as 4-byte ARGB,
+    // so writing 3-byte PixelRGB values corrupts colours and alpha there.
+    std::array<juce::PixelARGB, 256> palette {};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SpectrogramDisplay)
 };

@@ -203,17 +203,18 @@ void SpectrogramDisplay::rebuildImage()
     if (w <= 0 || h <= 0) return;
 
     if (!image.isValid() || image.getWidth() != w || image.getHeight() != h)
-        image = juce::Image(juce::Image::RGB, w, h, false);
+        image = juce::Image(juce::Image::ARGB, w, h, false);
 
     juce::Image::BitmapData bmp(image, juce::Image::BitmapData::writeOnly);
-    juce::PixelRGB background;
+    jassert(bmp.pixelFormat == juce::Image::ARGB && bmp.pixelStride == 4);
+    juce::PixelARGB background;
     background.setARGB(255, 10, 12, 32);
 
     if (data == nullptr || data->numFrames == 0)
     {
         for (int y = 0; y < h; ++y)
             for (int x = 0; x < w; ++x)
-                *reinterpret_cast<juce::PixelRGB*>(bmp.getPixelPointer(x, y)) = background;
+                *reinterpret_cast<juce::PixelARGB*>(bmp.getPixelPointer(x, y)) = background;
         return;
     }
 
@@ -240,10 +241,10 @@ void SpectrogramDisplay::rebuildImage()
         const int   k0 = juce::jlimit(0, nb - 1, (int)std::floor(bl));
         const int   k1 = juce::jlimit(0, nb - 1, (int)std::ceil(bh));
 
-        auto* row = reinterpret_cast<juce::PixelRGB*>(bmp.getLinePointer(py));
+        auto* row = bmp.getLinePointer(py);
         for (int px = 0; px < w; ++px)
         {
-            auto& pix = *reinterpret_cast<juce::PixelRGB*>(reinterpret_cast<juce::uint8*>(row) + px * bmp.pixelStride);
+            auto& pix = *reinterpret_cast<juce::PixelARGB*>(row + px * bmp.pixelStride);
             if (aboveRange || columnOutside[(size_t)px]) { pix = background; continue; }
 
             const float* column = columns.data() + (size_t)px * (size_t)nb;

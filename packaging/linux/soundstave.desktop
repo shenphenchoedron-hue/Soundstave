@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Soundstave
+GenericName=Audio to notation
+Comment=Spectral analysis, note detection and MIDI/MusicXML export
+Exec=soundstave %f
+Icon=soundstave
+Terminal=false
+Categories=AudioVideo;Audio;Music;
+MimeType=audio/x-wav;audio/wav;audio/flac;audio/x-aiff;audio/mpeg;

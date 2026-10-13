@@ -42,13 +42,13 @@ void PitchDetector::detect(SpectrogramPtr spectrogram,
 
     worker = std::thread([this, spectrogram, params, gen, aliveFlag, onComplete]
     {
-        auto notes = run(*spectrogram, params, &cancelled, &progress);
+        auto detected = run(*spectrogram, params, &cancelled, &progress);
         const bool wasCancelled = cancelled.load();
         running.store(false);
 
         if (!wasCancelled)
         {
-            juce::MessageManager::callAsync([this, aliveFlag, gen, onComplete, notes = std::move(notes)]() mutable
+            juce::MessageManager::callAsync([this, aliveFlag, gen, onComplete, notes = std::move(detected)]() mutable
             {
                 if (aliveFlag->load() && gen == generation.load() && onComplete)
                     onComplete(std::move(notes));
